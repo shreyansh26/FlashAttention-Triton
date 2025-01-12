@@ -2,6 +2,19 @@ import torch
 import triton
 import triton.language as tl
 
+@triton.autotune(
+    [
+        triton.Config(
+            {"BLOCK_SIZE_Q": BLOCK_SIZE_Q},
+            num_stages=num_stages,
+            num_warps=num_warps,
+        )
+        for BLOCK_SIZE_Q in [32, 64, 128]
+        for num_stages in ([3, 4, 7])
+        for num_warps in [2, 4]
+    ],
+    key=["SEQ_LEN", "HEAD_DIM"],
+)
 @triton.jit
 def _attn_bwd_preprocess_kernel(
     O,
@@ -30,6 +43,20 @@ def _attn_bwd_preprocess_kernel(
     # Store D block
     tl.store(D_block_ptrs, D_block)
 
+@triton.autotune(
+    [
+        triton.Config(
+            {"BLOCK_SIZE_Q": BLOCK_SIZE_Q, "BLOCK_SIZE_KV": BLOCK_SIZE_KV},
+            num_stages=num_stages,
+            num_warps=num_warps,
+        )
+        for BLOCK_SIZE_Q in [32, 64, 128]
+        for BLOCK_SIZE_KV in [32, 64, 128]
+        for num_stages in ([3, 4, 7])
+        for num_warps in [2, 4]
+    ],
+    key=["SEQ_LEN", "HEAD_DIM"],
+)
 @triton.jit
 def _attn_bwd_dk_dv_kernel(
     Q, K, V,
@@ -144,6 +171,20 @@ def _attn_bwd_dk_dv_kernel(
     dK_block_ptrs = dK + offset_kv[:, None] * HEAD_DIM + offset_dim[None, :]
     tl.store(dK_block_ptrs, dK_block)
 
+@triton.autotune(
+    [
+        triton.Config(
+            {"BLOCK_SIZE_Q": BLOCK_SIZE_Q, "BLOCK_SIZE_KV": BLOCK_SIZE_KV},
+            num_stages=num_stages,
+            num_warps=num_warps,
+        )
+        for BLOCK_SIZE_Q in [32, 64, 128]
+        for BLOCK_SIZE_KV in [32, 64, 128]
+        for num_stages in ([3, 4, 7])
+        for num_warps in [2, 4]
+    ],
+    key=["SEQ_LEN", "HEAD_DIM"],
+)
 @triton.jit
 def _attn_bwd_dq_kernel(
     Q, K, V,                    # (BATCH_SIZE, NUM_HEADS, SEQ_LEN, HEAD_DIM)
