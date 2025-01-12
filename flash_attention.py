@@ -1,6 +1,7 @@
 import torch
 import triton
 from fwd import _attn_fwd_kernel
+from bwd import _attn_bwd_preprocess_kernel, _attn_bwd_dk_dv_kernel, _attn_bwd_dq_kernel
 
 class FlashAttentionTriton(torch.autograd.Function):
     @staticmethod
@@ -55,10 +56,113 @@ class FlashAttentionTriton(torch.autograd.Function):
         ctx.save_for_backward(Q_bhsd, K_bhsd, V_bhsd, O_bhsd, L_bhs)
         ctx.softmax_scale = softmax_scale
         ctx.causal = causal
+        ctx.HEAD_DIM = HEAD_DIM_K
 
         return O_bhsd
 
 
     @staticmethod
-    def backward(ctx, dO):
-        raise NotImplementedError
+    def backward(ctx, dO_bhsd):
+        Q_bhsd, K_bhsd, V_bhsd, O_bhsd, L_bhs = ctx.saved_tensors
+
+        assert dO_bhsd.is_contiguous()
+        assert dO_bhsd.stride() == Q_bhsd.stride() == K_bhsd.stride() == V_bhsd.stride() == O_bhsd.stride()
+
+        dQ_bhsd = torch.empty_like(Q_bhsd)
+        dK_bhsd = torch.empty_like(K_bhsd)
+        dV_bhsd = torch.empty_like(V_bhsd)
+
+        BATCH_SIZE, NUM_HEADS, SEQ_LEN, _ = Q_bhsd.shape
+        HEAD_DIM = ctx.HEAD_DIM
+        BLOCK_SIZE_MICRO, BLOCK_SIZE_MACRO = 32, 128
+
+        NUM_WARPS, NUM_STAGES = 4, 3
+        
+        preprocess_grid = lambda args: (triton.cdiv(SEQ_LEN, BLOCK_SIZE_MACRO), BATCH_SIZE * NUM_HEADS, 1)
+
+        D_bhs = torch.empty_like(L_bhs)
+
+        # Compute all Di
+        _attn_bwd_preprocess_kernel[preprocess_grid](
+            O=O_bhsd,
+            dO=dO_bhsd,
+            D=D_bhs,
+            SEQ_LEN=SEQ_LEN,
+            HEAD_DIM=HEAD_DIM,
+            BLOCK_SIZE_Q=BLOCK_SIZE_MACRO
+        )
+
+        grid = (SEQ_LEN // BLOCK_SIZE_MACRO, BATCH_SIZE * NUM_HEADS, 1)
+        # grid = (SEQ_LEN // BLOCK_SIZE_MACRO, 1, BATCH_SIZE * NUM_HEADS)
+
+        stage = 3 if ctx.causal else 1
+
+        # Fix KV and iterate through all the Q blocks
+        _attn_bwd_dk_dv_kernel[grid](
+            Q=Q_bhsd,
+            K=K_bhsd,
+            V=V_bhsd,
+            softmax_scale=ctx.softmax_scale,
+            dO=dO_bhsd,
+            dQ=dQ_bhsd,
+            dK=dK_bhsd,
+            dV=dV_bhsd,
+            L=L_bhs,
+            D=D_bhs,
+            stride_Q_batch=Q_bhsd.stride(0),
+            stride_Q_head=Q_bhsd.stride(1),
+            stride_Q_seq=Q_bhsd.stride(2),
+            stride_Q_dim=Q_bhsd.stride(3),
+            stride_K_batch=K_bhsd.stride(0),
+            stride_K_head=K_bhsd.stride(1),
+            stride_K_seq=K_bhsd.stride(2),
+            stride_K_dim=K_bhsd.stride(3),
+            stride_V_batch=V_bhsd.stride(0),
+            stride_V_head=V_bhsd.stride(1),
+            stride_V_seq=V_bhsd.stride(2),
+            stride_V_dim=V_bhsd.stride(3),
+            NUM_HEADS=NUM_HEADS,
+            SEQ_LEN=SEQ_LEN,
+            HEAD_DIM=HEAD_DIM,
+            STAGE=stage,
+            BLOCK_SIZE_KV=BLOCK_SIZE_MACRO,
+            BLOCK_SIZE_Q=BLOCK_SIZE_MICRO,
+            num_warps=NUM_WARPS,
+            num_stages=NUM_STAGES,
+        )
+
+        # Fix Q and iterate through all the KV block
+        _attn_bwd_dq_kernel[grid](
+            Q=Q_bhsd,
+            K=K_bhsd,
+            V=V_bhsd,
+            softmax_scale=ctx.softmax_scale,
+            dO=dO_bhsd,
+            dQ=dQ_bhsd,
+            dK=dK_bhsd,
+            dV=dV_bhsd,
+            L=L_bhs,
+            D=D_bhs,
+            stride_Q_batch=Q_bhsd.stride(0),
+            stride_Q_head=Q_bhsd.stride(1),
+            stride_Q_seq=Q_bhsd.stride(2),
+            stride_Q_dim=Q_bhsd.stride(3),
+            stride_K_batch=K_bhsd.stride(0),
+            stride_K_head=K_bhsd.stride(1),
+            stride_K_seq=K_bhsd.stride(2),
+            stride_K_dim=K_bhsd.stride(3),
+            stride_V_batch=V_bhsd.stride(0),
+            stride_V_head=V_bhsd.stride(1),
+            stride_V_seq=V_bhsd.stride(2),
+            stride_V_dim=V_bhsd.stride(3),
+            NUM_HEADS=NUM_HEADS,
+            SEQ_LEN=SEQ_LEN,
+            HEAD_DIM=HEAD_DIM,
+            STAGE=stage,
+            BLOCK_SIZE_KV=BLOCK_SIZE_MICRO,
+            BLOCK_SIZE_Q=BLOCK_SIZE_MACRO,
+            num_warps=NUM_WARPS,
+            num_stages=NUM_STAGES,
+        )
+
+        return dQ_bhsd, dK_bhsd, dV_bhsd, None, None
