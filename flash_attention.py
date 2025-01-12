@@ -74,11 +74,8 @@ class FlashAttentionTriton(torch.autograd.Function):
 
         BATCH_SIZE, NUM_HEADS, SEQ_LEN, _ = Q_bhsd.shape
         HEAD_DIM = ctx.HEAD_DIM
-        BLOCK_SIZE_MICRO, BLOCK_SIZE_MACRO = 32, 128
-
-        NUM_WARPS, NUM_STAGES = 4, 3
         
-        preprocess_grid = lambda args: (triton.cdiv(SEQ_LEN, BLOCK_SIZE_MACRO), BATCH_SIZE * NUM_HEADS, 1)
+        preprocess_grid = lambda args: (triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]), BATCH_SIZE * NUM_HEADS, 1)
 
         D_bhs = torch.empty_like(L_bhs)
 
@@ -89,11 +86,9 @@ class FlashAttentionTriton(torch.autograd.Function):
             D=D_bhs,
             SEQ_LEN=SEQ_LEN,
             HEAD_DIM=HEAD_DIM,
-            BLOCK_SIZE_Q=BLOCK_SIZE_MACRO
         )
 
-        grid = (SEQ_LEN // BLOCK_SIZE_MACRO, BATCH_SIZE * NUM_HEADS, 1)
-        # grid = (SEQ_LEN // BLOCK_SIZE_MACRO, 1, BATCH_SIZE * NUM_HEADS)
+        grid = lambda args: (SEQ_LEN // args["BLOCK_SIZE_KV"], BATCH_SIZE * NUM_HEADS, 1)
 
         stage = 3 if ctx.causal else 1
 
@@ -125,11 +120,9 @@ class FlashAttentionTriton(torch.autograd.Function):
             SEQ_LEN=SEQ_LEN,
             HEAD_DIM=HEAD_DIM,
             STAGE=stage,
-            BLOCK_SIZE_KV=BLOCK_SIZE_MACRO,
-            BLOCK_SIZE_Q=BLOCK_SIZE_MICRO,
-            num_warps=NUM_WARPS,
-            num_stages=NUM_STAGES,
         )
+
+        grid = lambda args: (SEQ_LEN // args["BLOCK_SIZE_Q"], BATCH_SIZE * NUM_HEADS, 1)
 
         # Fix Q and iterate through all the KV block
         _attn_bwd_dq_kernel[grid](
@@ -159,10 +152,6 @@ class FlashAttentionTriton(torch.autograd.Function):
             SEQ_LEN=SEQ_LEN,
             HEAD_DIM=HEAD_DIM,
             STAGE=stage,
-            BLOCK_SIZE_KV=BLOCK_SIZE_MICRO,
-            BLOCK_SIZE_Q=BLOCK_SIZE_MACRO,
-            num_warps=NUM_WARPS,
-            num_stages=NUM_STAGES,
         )
 
         return dQ_bhsd, dK_bhsd, dV_bhsd, None, None
