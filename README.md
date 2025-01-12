@@ -14,8 +14,9 @@ triton==3.0.0
 
 ## Files
 * [fwd.py](fwd.py) - Implementation of the Triton kernel for the forward pass of FlashAttention. It supports both causal and non-causal implementations.
-* [flash_attention.py](flash_attention.py) - The host-side torch function for the kernel which takes in Q, K, V, the softmax scale and a boolean flag for causal/non-causal. The code currenly includes just the forward pass.
-* [test_correctness.py](test_correctness.py) - Includes a simple test of equivalence of the forward pass (both causal and non-causal) with normal attention.
+* [bwd.py](bwd.py) - Implementation of the Triton kernel for the backward pass of FlashAttention. It supports both causal and non-causal implementations.
+* [flash_attention.py](flash_attention.py) - The host-side torch function for the kernel which takes in Q, K, V, the softmax scale and a boolean flag for causal/non-causal.
+* [test_correctness.py](test_correctness.py) - Includes a simple test of equivalence of the forward pass (both causal and non-causal) with normal attention along with benchmarking.
 
 ## To run
     
