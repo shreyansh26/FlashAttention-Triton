@@ -1,6 +1,6 @@
 # FlashAttention in Triton
 
-An implementation of FlashAttention using Triton. This is based on the [official Triton tutorials](https://triton-lang.org/main/getting-started/tutorials/06-fused-attention.html) and [Umar Jamil's awesome talk](https://www.youtube.com/watch?v=zy8ChVd_oTM).
+An implementation of [FlashAttention](https://arxiv.org/abs/2307.08691) using Triton. This is based on the [official Triton tutorials](https://triton-lang.org/main/getting-started/tutorials/06-fused-attention.html) and [Umar Jamil's awesome talk](https://www.youtube.com/watch?v=zy8ChVd_oTM).
 I have added additional comments and proofs to aid my understanding of the code.
 
 The code in the Triton tutorials is more performant. This implementation is only for educational purposes.
