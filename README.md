@@ -8,8 +8,8 @@ The code in the Triton tutorials is more performant. This implementation is only
 ## Requirements
 This has been tested on -
 ```
-* torch==2.4.0
-* triton==3.0.0
+torch==2.4.0
+triton==3.0.0
 ```
 
 ## Files
