@@ -139,7 +139,7 @@ def _attn_fwd_kernel(
         strides = (stride_Q_seq, stride_Q_dim),
         offsets = (block_index_q * BLOCK_SIZE_Q, 0),
         block_shape = (BLOCK_SIZE_Q, HEAD_DIM),
-        order = (1, 0) # order is essentially the order of strides (argsort)
+        order = (1, 0) # order is essentially the order of strides (like argsort)
     )
 
     K_block_ptr = tl.make_block_ptr(
@@ -149,7 +149,7 @@ def _attn_fwd_kernel(
         strides = (stride_K_dim, stride_K_seq),
         offsets = (0, 0),
         block_shape = (HEAD_DIM, BLOCK_SIZE_KV),
-        order = (0, 1) # order is essentially the order of strides (argsort)
+        order = (0, 1) # order is essentially the order of strides (like argsort)
     )
 
     V_block_ptr = tl.make_block_ptr(
@@ -158,7 +158,7 @@ def _attn_fwd_kernel(
         strides = (stride_V_seq, stride_V_dim),
         offsets = (0, 0),
         block_shape = (BLOCK_SIZE_KV, HEAD_DIM),
-        order = (1, 0) # order is essentially the order of strides (argsort)
+        order = (1, 0) # order is essentially the order of strides (like argsort)
     )
 
     O_block_ptr = tl.make_block_ptr(
@@ -167,7 +167,7 @@ def _attn_fwd_kernel(
         strides = (stride_O_seq, stride_O_dim),
         offsets = (block_index_q * BLOCK_SIZE_Q, 0),
         block_shape = (BLOCK_SIZE_Q, HEAD_DIM),
-        order = (1, 0) # order is essentially the order of strides (argsort)
+        order = (1, 0) # order is essentially the order of strides (like argsort)
     )
 
     # offset for tokens in Q and K,V sequences to process
